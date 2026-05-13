@@ -2,7 +2,7 @@
 
 ## Problem
 
-Docker Desktop for Windows exposes Docker Engine JSON settings, but it does not currently document a supported way to install and persist an additional OCI runtime binary such as gVisor `runsc` inside its managed Linux backend and register it for Docker Desktop containers.
+Docker Desktop for Windows exposes Docker Engine JSON settings, but it does not currently document a supported way to install and persist an additional OCI runtime binary such as gVisor `runsc` inside its managed Linux backend and register it for Docker Desktop containers. I've opened a feature request for this with Docker: https://github.com/docker/desktop-feedback/issues/364
 
 A practical alternative is to install Docker Engine directly inside a WSL distro and configure `runsc` there like on a normal Linux system. That works, but it means using a separate Docker installation/context and losing the Docker Desktop for Windows app integration for those containers, images, volumes, settings, and UI workflows. Docker's WSL documentation also warns that running Docker Desktop alongside Docker Engine or Docker CLI installed directly in a WSL distro can cause conflicts.
 

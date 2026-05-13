@@ -6,22 +6,22 @@ $ErrorActionPreference = "Stop"
 . "$PSScriptRoot\common.ps1"
 
 if (-not (Get-Command docker -ErrorAction SilentlyContinue)) {
-    exit 0
+    return
 }
 
 if (-not (Test-DockerReady)) {
-    exit 0
+    return
 }
 
-if (Test-RunscRegistered) {
-    exit 0
+if (Test-RunscLightweightHealthy -DefaultRuntime:$DefaultRuntime) {
+    return
 }
 
-Write-Host "runsc runtime missing; repairing Docker Desktop runtime config..."
+Write-Host "runsc runtime is missing or not configured as expected; repairing Docker Desktop runtime config..."
 Invoke-RunscInstaller -DefaultRuntime:$DefaultRuntime
 
-if (-not (Test-RunscRegistered)) {
-    throw "Repair ran, but runsc still is not registered."
+if (-not (Test-RunscLightweightHealthy -DefaultRuntime:$DefaultRuntime)) {
+    throw "Repair ran, but runsc still is not configured as expected."
 }
 
 Write-Host "OK: runsc is registered."

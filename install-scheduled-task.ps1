@@ -2,6 +2,7 @@ param(
     [int]$IntervalMinutes = 10,
     [string]$TaskName = "Reconcile gVisor Docker Desktop runtime",
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA "gvisor-docker-desktop-toolkit"),
+    [switch]$DefaultRuntime,
     [switch]$RunNow
 )
 
@@ -15,10 +16,14 @@ New-Item -ItemType Directory -Path $InstallDir -Force | Out-Null
 Copy-Item -Path (Join-Path $PSScriptRoot "*.ps1") -Destination $InstallDir -Force
 
 $Reconciler = Join-Path $InstallDir "reconcile-once.ps1"
+$ReconcilerArgs = "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Reconciler`""
+if ($DefaultRuntime) {
+    $ReconcilerArgs += " -DefaultRuntime"
+}
 
 $Action = New-ScheduledTaskAction `
     -Execute "powershell.exe" `
-    -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$Reconciler`""
+    -Argument $ReconcilerArgs
 
 $TriggerLogin = New-ScheduledTaskTrigger -AtLogOn
 
@@ -49,7 +54,11 @@ Write-Host "No WSL distro is used by this scheduled task."
 
 if ($RunNow) {
     Write-Host "Running reconciler once now..."
-    & powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$Reconciler"
+    $runNowArgs = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $Reconciler)
+    if ($DefaultRuntime) {
+        $runNowArgs += "-DefaultRuntime"
+    }
+    & powershell.exe @runNowArgs
 
     if ($LASTEXITCODE -ne 0) {
         throw "Initial reconciler run failed with exit code $LASTEXITCODE."

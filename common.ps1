@@ -1,5 +1,9 @@
 Set-StrictMode -Version Latest
 
+$script:RunscVolumeName = "runsc-runtime-binaries"
+$script:RunscHostDir = "/var/lib/docker/volumes/$script:RunscVolumeName/_data"
+$script:RunscPath = "$script:RunscHostDir/runsc"
+
 function Test-DockerReady {
     docker info *> $null
     return ($LASTEXITCODE -eq 0)
@@ -13,9 +17,68 @@ function Get-DockerRuntimesJson {
     return ($output -join "`n")
 }
 
-function Test-RunscRegistered {
+function Get-DockerRuntimes {
     $runtimes = Get-DockerRuntimesJson
-    return ($runtimes -match '"runsc"')
+    if ([string]::IsNullOrWhiteSpace($runtimes)) {
+        return $null
+    }
+
+    try {
+        return ($runtimes | ConvertFrom-Json -ErrorAction Stop)
+    } catch {
+        return $null
+    }
+}
+
+function Get-RunscRuntimePath {
+    $runtimes = Get-DockerRuntimes
+    if ($null -eq $runtimes) {
+        return ""
+    }
+
+    $runscRuntime = $runtimes.PSObject.Properties["runsc"]
+    if ($null -eq $runscRuntime) {
+        return ""
+    }
+
+    return [string]$runscRuntime.Value.path
+}
+
+function Get-DockerDefaultRuntime {
+    $output = docker info --format '{{.DefaultRuntime}}' 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return ""
+    }
+    return (($output -join "`n").Trim())
+}
+
+function Test-RunscRegistered {
+    return (-not [string]::IsNullOrWhiteSpace((Get-RunscRuntimePath)))
+}
+
+function Test-RunscConfigured {
+    return ((Get-RunscRuntimePath) -eq $script:RunscPath)
+}
+
+function Test-RunscLightweightHealthy {
+    param(
+        [switch]$DefaultRuntime
+    )
+
+    docker volume inspect $script:RunscVolumeName *> $null
+    if ($LASTEXITCODE -ne 0) {
+        return $false
+    }
+
+    if (-not (Test-RunscConfigured)) {
+        return $false
+    }
+
+    if ($DefaultRuntime -and (Get-DockerDefaultRuntime) -ne "runsc") {
+        return $false
+    }
+
+    return $true
 }
 
 function Invoke-RunscInstaller {
@@ -115,24 +178,33 @@ echo "config changed: ${CONFIG_CHANGED}"
 echo "done"
 '@
 
-    $dockerArgs = @(
-        "run",
-        "--rm",
-        "--pid=host",
-        "--mount", "type=volume,source=runsc-runtime-binaries,target=/var/lib/docker/volumes/runsc-runtime-binaries/_data",
-        "--mount", "type=bind,source=/run/config/docker/daemon.json,target=/run/config/docker/daemon.json",
-        "--env", "SET_DEFAULT_RUNTIME=$setDefault",
-        "--env", "CONFIG_FILE=/run/config/docker/daemon.json",
-        "--env", "RUNSC_HOST_DIR=/var/lib/docker/volumes/runsc-runtime-binaries/_data",
-        "alpine:3.20",
-        "sh",
-        "-euxc",
-        $installerScript
-    )
+    $installerPath = Join-Path ([System.IO.Path]::GetTempPath()) ("install-runsc-{0}.sh" -f [System.Guid]::NewGuid().ToString("N"))
+    $utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($installerPath, ($installerScript -replace "`r`n", "`n"), $utf8NoBom)
 
-    & docker @dockerArgs
+    try {
+        $dockerArgs = @(
+            "run",
+            "--rm",
+            "--pid=host",
+            "--mount", "type=volume,source=$script:RunscVolumeName,target=$script:RunscHostDir",
+            "--mount", "type=bind,source=/run/config/docker/daemon.json,target=/run/config/docker/daemon.json",
+            "--mount", "type=bind,source=$installerPath,target=/tmp/install-runsc.sh,readonly",
+            "--env", "SET_DEFAULT_RUNTIME=$setDefault",
+            "--env", "CONFIG_FILE=/run/config/docker/daemon.json",
+            "--env", "RUNSC_HOST_DIR=$script:RunscHostDir",
+            "alpine:3.20",
+            "sh",
+            "-eux",
+            "/tmp/install-runsc.sh"
+        )
 
-    if ($LASTEXITCODE -ne 0) {
-        throw "Installer container failed with exit code $LASTEXITCODE."
+        & docker @dockerArgs
+
+        if ($LASTEXITCODE -ne 0) {
+            throw "Installer container failed with exit code $LASTEXITCODE."
+        }
+    } finally {
+        Remove-Item -LiteralPath $installerPath -Force -ErrorAction SilentlyContinue
     }
 }

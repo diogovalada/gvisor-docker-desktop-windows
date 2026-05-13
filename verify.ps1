@@ -1,5 +1,6 @@
 param(
-    [switch]$RunTest
+    [Alias("RunTest")]
+    [switch]$RunSmokeTest
 )
 
 $ErrorActionPreference = "Stop"
@@ -16,9 +17,14 @@ if (-not (Test-RunscRegistered)) {
     throw "runsc is not registered."
 }
 
-Write-Host "OK: runsc is registered."
+if (-not (Test-RunscConfigured)) {
+    throw "runsc is registered, but not with the expected runtime path. Expected: $script:RunscPath; actual: $(Get-RunscRuntimePath)"
+}
 
-if ($RunTest) {
+Write-Host "OK: runsc is registered."
+Write-Host "runsc path: $(Get-RunscRuntimePath)"
+
+if ($RunSmokeTest) {
     Write-Host "Running a small container with --runtime=runsc..."
     docker run --rm --runtime=runsc alpine:3.20 sh -c 'echo container ok; uname -a; dmesg 2>/dev/null | head -20 || true'
 

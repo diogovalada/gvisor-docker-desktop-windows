@@ -44,7 +44,7 @@ Or use the wrapper:
 From this folder in PowerShell:
 
 ```powershell
-Set-ExecutionPolicy -Scope CurrentUser RemoteSigned
+Get-ChildItem -Recurse | Unblock-File # This unblocks running the scripts on this folder. Only needs running once.
 .\scripts\install-runsc.ps1
 ```
 
